@@ -1,0 +1,30 @@
+Directory structure :
+1) MonoPhotonProcessors - This includes a set of source code of analysis processors.
+2) run - In this directory, you compile and execute your processors.
+
+How to run?
+1) source init_ilcsoft_MP_v02-00-01.sh
+	--> This setup your environment.
+            This script setup the standard environment (ilcsoft-v02-00-01) and
+            add your library path so that you can call your processors (e.g. MonoPhotonProcessor) 
+
+== compilation ==
+2) cd MonoPhotonProcessors
+3) rm -rf build (if already exist)
+4) mkdir build
+5) cd build
+6) cmake -C $ILCSOFT/ILCSoft.cmake ..
+7) make; make install
+
+== execution (example) ==
+8) ../../run_DBD (or run_l5, run_s5)
+9) mkdir nung (for nung analysis)
+10) cd nung
+11) cp ../SKELTON/*.py .
+12) (Edit conf.py if necessary)
+13) python makeSteeringFiles.py
+14) python manyRun.py
+
+
+
+ 
