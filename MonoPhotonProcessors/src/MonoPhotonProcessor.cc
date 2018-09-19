@@ -138,10 +138,10 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
           _data.ipz = getIP(beam).Z(); 
         }
         // create MCParticle pointer and indices in MCParticle collection
-        std::map<MCParticle*,int> mcpmap;
+        _mcpmap.clear();
         for(int i=0; i< nMCP ; i++){
            MCParticle* p = dynamic_cast<MCParticle*>( colmcp->getElementAt( i ) ) ;
-           mcpmap.insert(std::map<MCParticle*,int>::value_type(p,i));
+           _mcpmap.insert(std::map<MCParticle*,int>::value_type(p,i));
         }
 
         for(int i=0; i< nMCP ; i++){
@@ -155,21 +155,21 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             int nParents = p->getParents().size(); 
             if ( nParents > NMAX_PARENTS ) {
                std::cerr << " !!! NOTICE nParents ( = " << nParents << ") exceeds NMAX_PARENTS ( = " << NMAX_PARENTS << ")." << std::endl;
-               std::cerr << " event = " << _nEvt << " index = " << mcpmap.find(p)->second << std::endl;
+               std::cerr << " event = " << _nEvt << " index = " << _mcpmap.find(p)->second << std::endl;
                std::cerr << " The entries more than " << NMAX_PARENTS << " will be discarded." << std::endl;
                nParents = NMAX_PARENTS;
             }
             _data.mcp_nparents[i] = nParents;
 
             for (int j = 0; j < nParents; j++) {
-              _data.mcp_parentIndex[i][j] = mcpmap.find(p->getParents()[j])->second;
+              _data.mcp_parentIndex[i][j] = _mcpmap.find(p->getParents()[j])->second;
             }
 
             // keep daughters info
             int nDaughters = p->getDaughters().size();
             if ( nDaughters > NMAX_DAUGHTERS ) {
                std::cerr << " !!! NOTICE nDaughters ( = " << nDaughters << ") exceeds NMAX_DAUGHTERS ( = " << NMAX_DAUGHTERS << ")." << std::endl;
-               std::cerr << " event = " << _nEvt << " index = " << mcpmap.find(p)->second << std::endl;
+               std::cerr << " event = " << _nEvt << " index = " << _mcpmap.find(p)->second << std::endl;
                std::cerr << " The entries more than " << NMAX_DAUGHTERS << " will be discarded." << std::endl;
                //for (int j = 0; j < nDaughters-1; j++) {
                //  std::cerr << " # " << j << " PID:" << p->getDaughters()[j]->getPDG() << ", ";
@@ -181,7 +181,7 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             _data.mcp_ndaughters[i] = nDaughters;
 
             for (int j = 0; j < nDaughters; j++) {
-              _data.mcp_daughterIndex[i][j] = mcpmap.find(p->getDaughters()[j])->second;
+              _data.mcp_daughterIndex[i][j] = _mcpmap.find(p->getDaughters()[j])->second;
             }
 
             _data.mcp_e[i]     = p->getEnergy(); 
@@ -194,7 +194,7 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             TVector3 pv(px,py,pz);
             _data.mcp_phi[i]   = pv.Phi(); 
             //_data.mcp_theta[i] = pv.Theta(); // need to consider 2pi = 0.
-            _data.mcp_theta[i] = TMath::ATan(pv.Perp()/pz); 
+            _data.mcp_theta[i] = (pz>0)?TMath::ATan(pv.Perp()/pz):TMath::ATan(pv.Perp()/pz)+TMath::Pi(); 
             _data.mcp_chrg[i]  = p->getCharge();
             _data.mcp_startx[i] = float(p->getVertex()[0]);
             _data.mcp_starty[i] = float(p->getVertex()[1]);
@@ -209,7 +209,6 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
 
         } 
     }
-
 
 
     if( colpfo != NULL ){
@@ -239,7 +238,24 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
               int nmcr = _navpfo->getRelatedToObjects( p ).size();
               _data.nmcr[i] = nmcr; 
               if ( nmcr > 0 ) {
-                 mcr = dynamic_cast< MCParticle *> ( _navpfo->getRelatedToObjects( p )[0] );
+                 //mcr = dynamic_cast< MCParticle *> ( _navpfo->getRelatedToObjects( p )[0] );
+                 mcr = getBestMCParticleOf(p,_navpfo);
+                 //std::cerr << "MCRelation event = " << _nEvt << " index = " << _mcpmap.find(mcr)->second << std::endl;
+                 _data.mcr_index[i] = _mcpmap.find(mcr)->second;
+                 if (mcr->getParents().size()) {
+                   //std::cerr << "                   parent index = " << _mcpmap.find(mcr->getParents()[0])->second << std::endl;
+                   int nParents = mcr->getParents().size(); 
+                   _data.mcr_nparents[i] = nParents;
+                   for (int j = 0; j < nParents; j++) {
+                     _data.mcr_parentIndex[i][j] = _mcpmap.find(mcr->getParents()[j])->second;
+                   }
+
+                   int nDaughters = mcr->getDaughters().size(); 
+                   _data.mcr_ndaughters[i] = nDaughters;
+                   for (int j = 0; j < nDaughters; j++) {
+                     _data.mcr_daughterIndex[i][j] = _mcpmap.find(mcr->getDaughters()[j])->second;
+                   }
+                 }
                  _data.mcr_weight[i] = _navpfo->getRelatedToWeights( p )[0];
                  _data.mcr_e[i]     = mcr->getEnergy(); 
                  float px = mcr->getMomentum()[0];
@@ -251,7 +267,8 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
                  TVector3 pv(px,py,pz);
                  _data.mcr_phi[i]   = pv.Phi(); 
                  //_data.mcr_theta[i] = pv.Theta(); // need to consider 2pi = 0.
-                 _data.mcr_theta[i] = TMath::ATan(pv.Perp()/pz); 
+                 //_data.mcr_theta[i] = TMath::ATan(pv.Perp()/pz); 
+                 _data.mcr_theta[i] = (pz>0)?TMath::ATan(pv.Perp()/pz):TMath::ATan(pv.Perp()/pz)+TMath::Pi(); 
                  _data.mcr_chrg[i]  = mcr->getCharge();
                  _data.mcr_pdg[i]   = mcr->getPDG();
                  _data.mcr_genstatus[i] = mcr->getGeneratorStatus();
@@ -272,9 +289,18 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             TVector3 pv(px,py,pz);
             _data.pfo_phi[i]   = pv.Phi(); 
             //_data.pfo_theta[i] = pv.Theta(); // need to consider 2pi = 0.
-            _data.pfo_theta[i] = TMath::ATan(pv.Perp()/pz); 
+            //_data.pfo_theta[i] = TMath::ATan(pv.Perp()/pz); 
+            _data.pfo_theta[i] = (pz>0)?TMath::ATan(pv.Perp()/pz):TMath::ATan(pv.Perp()/pz)+TMath::Pi(); 
             _data.pfo_chrg[i]  = p->getCharge();
             _data.pfo_pdg[i]   = p->getType();
+            _data.pfo_goodnessOfPid[i]   = p->getGoodnessOfPID();
+
+            //_data.pfo_startx[i]   = float(p->getStartVertex()->getPosition()[0]);
+            //_data.pfo_starty[i]   = float(p->getStartVertex()->getPosition()[1]);
+            //_data.pfo_startz[i]   = float(p->getStartVertex()->getPosition()[2]);
+            //_data.pfo_endx[i]   = float(p->getEndVertex()->getPosition()[0]);
+            //_data.pfo_endy[i]   = float(p->getEndVertex()->getPosition()[1]);
+            //_data.pfo_endz[i]   = float(p->getEndVertex()->getPosition()[2]);
         
             // fill first track info
             _data.pfo_ntrk[i]  = trkvec.size();
@@ -384,6 +410,12 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "pfo_pz"          , &d.pfo_pz          , "pfo_pz[npfos]"         );
   _evtdata->Branch( "pfo_phi"         , &d.pfo_phi         , "pfo_phi[npfos]"        );
   _evtdata->Branch( "pfo_theta"       , &d.pfo_theta       , "pfo_theta[npfos]"      );
+  //_evtdata->Branch( "pfo_startx"      , &d.pfo_startx      , "pfo_startx[npfos]"     );
+  //_evtdata->Branch( "pfo_starty"      , &d.pfo_starty      , "pfo_starty[npfos]"     );
+  //_evtdata->Branch( "pfo_startz"      , &d.pfo_startz      , "pfo_startz[npfos]"     );
+  //_evtdata->Branch( "pfo_endx"        , &d.pfo_endx        , "pfo_endx[npfos]"       );
+  //_evtdata->Branch( "pfo_endy"        , &d.pfo_endy        , "pfo_endy[npfos]"       );
+  //_evtdata->Branch( "pfo_endz"        , &d.pfo_endz        , "pfo_endz[npfos]"       );
   _evtdata->Branch( "pfo_chrg"        , &d.pfo_chrg        , "pfo_chrg[npfos]"       );
   _evtdata->Branch( "pfo_pdg"         , &d.pfo_pdg         , "pfo_pdg[npfos]/I"      );
   _evtdata->Branch( "pfo_ntrk"        , &d.pfo_ntrk        , "pfo_ntrk[npfos]/I"     );
@@ -407,6 +439,7 @@ void MonoPhotonProcessor::makeNTuple() {
 
   _evtdata->Branch( "nmcr"            , &d.nmcr            , "nmcr[npfos]/I"         );
   _evtdata->Branch( "mcr_weight"      , &d.mcr_weight      , "mcr_weight[npfos]"     );
+  _evtdata->Branch( "mcr_index"       , &d.mcr_index       , "mcr_index[npfos]/I"    );
   _evtdata->Branch( "mcr_e"           , &d.mcr_e           , "mcr_e[npfos]"          );
   _evtdata->Branch( "mcr_px"          , &d.mcr_px          , "mcr_px[npfos]"         );
   _evtdata->Branch( "mcr_py"          , &d.mcr_py          , "mcr_py[npfos]"         );
@@ -416,6 +449,17 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "mcr_chrg"        , &d.mcr_chrg        , "mcr_chrg[npfos]"       );
   _evtdata->Branch( "mcr_pdg"         , &d.mcr_pdg         , "mcr_pdg[npfos]/I"      );
   _evtdata->Branch( "mcr_genstatus"   , &d.mcr_genstatus   , "mcr_genstatus[npfos]/I");
+  _evtdata->Branch( "mcr_startx"      , &d.mcr_startx      , "mcr_startx[npfos]"     );
+  _evtdata->Branch( "mcr_starty"      , &d.mcr_starty      , "mcr_starty[npfos]"     );
+  _evtdata->Branch( "mcr_startz"      , &d.mcr_startz      , "mcr_startz[npfos]"     );
+  _evtdata->Branch( "mcr_endx"        , &d.mcr_endx        , "mcr_endx[npfos]"       );
+  _evtdata->Branch( "mcr_endy"        , &d.mcr_endy        , "mcr_endy[npfos]"       );
+  _evtdata->Branch( "mcr_endz"        , &d.mcr_endz        , "mcr_endz[npfos]"       );
+  _evtdata->Branch( "mcr_pdg"         , &d.mcr_pdg         , "mcr_pdg[npfos]/I"      );
+  _evtdata->Branch( "mcr_nparents"    , &d.mcr_nparents    , "mcr_nparents[npfos]/I" );
+  _evtdata->Branch( "mcr_parentIndex" , &d.mcr_parentIndex , "mcr_parentIndex[npfos][10]/I" );
+  _evtdata->Branch( "mcr_ndaughters"    , &d.mcr_ndaughters    , "mcr_ndaughters[npfos]/I" );
+  _evtdata->Branch( "mcr_daughterIndex" , &d.mcr_daughterIndex , "mcr_daughterIndex[npfos][10]/I" );
   _evtdata->Branch( "mcr_simstatus"   , &d.mcr_simstatus   , "mcr_simstatus[npfos]/I");
   _evtdata->Branch( "mcr_iscreatedinsim"   , &d.mcr_iscreatedinsim   , "mcr_iscreatedinsim[npfos]/O");
 
@@ -460,4 +504,41 @@ TVector3 MonoPhotonProcessor::getIP(MCParticle* p) {
   }
   TVector3 ip(mcp->getVertex());
   return ip;
+}
+
+MCParticle* MonoPhotonProcessor::getBestMCParticleOf(ReconstructedParticle* p, LCRelationNavigator* nav)
+{
+    // getting MC information
+    int nrel = nav->getRelatedToObjects(p).size();
+
+#ifdef __DEBUG__
+std::cerr << "  ### new reco particle. pdg_reco = " << p->getType() << std::endl;
+std::cerr << "    MCParticles linked to this object... ( # = " << nrel << " )" << std::endl;
+#endif
+
+    double trkwmax;
+    //double calwmax;
+    MCParticle *best = 0;
+    for (int imc = 0; imc < nrel; imc++ ) {
+
+      MCParticle *mcp = dynamic_cast<MCParticle*>(nav->getRelatedToObjects(p)[imc]);
+
+      double trkw = double((int(nav->getRelatedToWeights(p)[imc])%10000)/1000.);
+      double calw = double((int(nav->getRelatedToWeights(p)[imc])/10000)/1000.);
+
+      if (imc==0) {
+        trkwmax = trkw;
+        best = mcp;
+      } else if (trkw > trkwmax) {
+        trkwmax = trkw;
+        best = mcp;
+      }
+#ifdef __DEBUG__
+      std::cerr << "         " << imc << ") : pdg_mc = " << mcp->getPDG() 
+                << ",  weight = " << nav->getRelatedToWeights(p)[imc] 
+                << ", trkw = " << trkw 
+                << ", calw = " << calw << std::endl;
+#endif
+   }
+   return best;
 }

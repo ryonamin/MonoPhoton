@@ -2,7 +2,9 @@
 #define MonoPhotonProcessor_h 1
 
 #include "marlin/Processor.h"
+#include <EVENT/ReconstructedParticle.h>
 #include <EVENT/MCParticle.h>
+#include <EVENT/Vertex.h>
 #include "lcio.h"
 #include <string>
 
@@ -79,6 +81,14 @@ class MonoPhotonProcessor : public Processor {
   */ 
   TVector3 getIP(EVENT::MCParticle* p); 
 
+  /** MCParticle pointer and index 
+   */
+  std::map<MCParticle*,int> _mcpmap;
+
+  /** Get most probable MCParticle pointer form PFOs 
+   */
+  MCParticle* getBestMCParticleOf(ReconstructedParticle* p, LCRelationNavigator* nav);
+
   /** Input collection name.
    */
   std::string _colMCP ;
@@ -101,8 +111,15 @@ class MonoPhotonProcessor : public Processor {
     float  pfo_pz[NMAX_PFOS];
     float  pfo_phi[NMAX_PFOS];
     float  pfo_theta[NMAX_PFOS];
+    //float  pfo_startx[NMAX_PFOS];
+    //float  pfo_starty[NMAX_PFOS];
+    //float  pfo_startz[NMAX_PFOS];
+    //float  pfo_endx[NMAX_PFOS];
+    //float  pfo_endy[NMAX_PFOS];
+    //float  pfo_endz[NMAX_PFOS];
     float  pfo_chrg[NMAX_PFOS];
     int    pfo_pdg[NMAX_PFOS];
+    int    pfo_goodnessOfPid[NMAX_PFOS];
     int    pfo_ntrk[NMAX_PFOS];
     float  pfo_d0[NMAX_PFOS];
     float  pfo_d0sig[NMAX_PFOS];
@@ -125,6 +142,7 @@ class MonoPhotonProcessor : public Processor {
     // MC Relation 
     int    nmcr[NMAX_PFOS];
     float  mcr_weight[NMAX_PFOS];
+    int    mcr_index[NMAX_PFOS];
     float  mcr_e[NMAX_PFOS];
     float  mcr_px[NMAX_PFOS];
     float  mcr_py[NMAX_PFOS];
@@ -132,7 +150,17 @@ class MonoPhotonProcessor : public Processor {
     float  mcr_phi[NMAX_PFOS];
     float  mcr_theta[NMAX_PFOS];
     float  mcr_chrg[NMAX_PFOS];
+    float  mcr_startx[NMAX_PFOS];
+    float  mcr_starty[NMAX_PFOS];
+    float  mcr_startz[NMAX_PFOS];
+    float  mcr_endx[NMAX_PFOS];
+    float  mcr_endy[NMAX_PFOS];
+    float  mcr_endz[NMAX_PFOS];
     int    mcr_pdg[NMAX_PFOS];
+    int    mcr_nparents[NMAX_PFOS];
+    int    mcr_parentIndex[NMAX_PFOS][NMAX_PARENTS];
+    int    mcr_ndaughters[NMAX_PFOS];
+    int    mcr_daughterIndex[NMAX_PFOS][NMAX_DAUGHTERS];
     int    mcr_genstatus[NMAX_PFOS];
     int    mcr_simstatus[NMAX_PFOS];
     bool   mcr_iscreatedinsim[NMAX_PFOS];
