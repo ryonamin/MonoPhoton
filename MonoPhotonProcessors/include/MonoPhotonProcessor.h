@@ -148,12 +148,12 @@ class MonoPhotonProcessor : public Processor {
     float  pfo_bcal_e[NMAX_PFOS];
   
     float  emaxphoton_pt_bcalcoord;
-    float  emaxphoton_phi;
-    float  emaxphoton_theta;
+    float  emaxphoton_phi_bcalcoord;
+    float  emaxphoton_theta_bcalcoord;
     float  emaxphoton_e;
     float  ptmaxphoton_pt_bcalcoord;
-    float  ptmaxphoton_phi;
-    float  ptmaxphoton_theta;
+    float  ptmaxphoton_phi_bcalcoord;
+    float  ptmaxphoton_theta_bcalcoord;
     float  ptmaxphoton_e;
 
     // MC Relation 

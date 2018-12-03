@@ -254,8 +254,12 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
 
     float photon_ptmax  = -99999.;
     float ptmaxphoton_e = -99999.;
+    float ptmaxphoton_phi_bcalcoord = -99999.;
+    float ptmaxphoton_theta_bcalcoord = -99999.;
     float photon_emax   = -99999.;
     float emaxphoton_pt_bcalcoord = -99999.;
+    float emaxphoton_phi_bcalcoord = -99999.;
+    float emaxphoton_theta_bcalcoord = -99999.;
     if( colpfo != NULL ){
 
         int nPFO = colpfo->getNumberOfElements()  ;
@@ -346,6 +350,7 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             TVector3 pv(px,py,pz);
             _data.pfo_pt[i]    = pv.Pt(); 
             float px_bcalcoord = _bg*pv.Mag() + _g * px; 
+            TVector3 pv_bcalcoord(px_bcalcoord,py,pz);
             _data.pfo_px_bcalcoord[i] = px_bcalcoord; 
             _data.pfo_pt_bcalcoord[i] = TMath::Sqrt(px_bcalcoord*px_bcalcoord+py*py); 
             _data.pfo_phi[i]   = pv.Phi(); 
@@ -360,12 +365,16 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             if (_data.pfo_pdg[i]==22) {
               if (p->getEnergy()>photon_emax) {
                  photon_emax = p->getEnergy();
-                 emaxphoton_pt_bcalcoord = TMath::ATan2(_data.pfo_py[i],_data.pfo_pt_bcalcoord[i]);
-                 emaxphoton_phi_bcalord = _data.pfo_px_bcalcoord[i];
+                 emaxphoton_pt_bcalcoord = _data.pfo_pt_bcalcoord[i];
+                 emaxphoton_phi_bcalcoord = TMath::ATan2(_data.pfo_py[i],_data.pfo_px_bcalcoord[i]);
+                 emaxphoton_theta_bcalcoord = (pv_bcalcoord.Z()>0)?TMath::ATan(pv_bcalcoord.Perp()/pv_bcalcoord.Z()):TMath::ATan(pv_bcalcoord.Perp()/pv_bcalcoord.Z())+TMath::Pi(); 
+TMath::ATan2(_data.pfo_py[i],_data.pfo_px_bcalcoord[i]);
               }
               if (_data.pfo_pt_bcalcoord[i]>photon_ptmax) {
                  photon_ptmax = _data.pfo_pt_bcalcoord[i];
                  ptmaxphoton_e = _data.pfo_e[i];
+                 ptmaxphoton_phi_bcalcoord = TMath::ATan2(_data.pfo_py[i],_data.pfo_px_bcalcoord[i]);
+                 ptmaxphoton_theta_bcalcoord = (pv_bcalcoord.Z()>0)?TMath::ATan(pv_bcalcoord.Perp()/pv_bcalcoord.Z()):TMath::ATan(pv_bcalcoord.Perp()/pv_bcalcoord.Z())+TMath::Pi(); 
               }
             }           
 
@@ -433,8 +442,12 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
         }
 
         _data.emaxphoton_pt_bcalcoord  = emaxphoton_pt_bcalcoord;
+        _data.emaxphoton_phi_bcalcoord = emaxphoton_phi_bcalcoord;
+        _data.emaxphoton_theta_bcalcoord = emaxphoton_theta_bcalcoord;
         _data.emaxphoton_e             = photon_emax;
         _data.ptmaxphoton_pt_bcalcoord = photon_ptmax;
+        _data.ptmaxphoton_phi_bcalcoord = ptmaxphoton_phi_bcalcoord;
+        _data.ptmaxphoton_theta_bcalcoord = ptmaxphoton_theta_bcalcoord;
         _data.ptmaxphoton_e            = ptmaxphoton_e;
 
         _data.nclrhits = icalhits;
@@ -555,10 +568,14 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "pfo_lcal_e"      , &d.pfo_lcal_e      , "pfo_lcal_e[npfos]"     );
   _evtdata->Branch( "pfo_lhcal_e"     , &d.pfo_lhcal_e     , "pfo_lhcal_e[npfos]"    );
   _evtdata->Branch( "pfo_bcal_e"      , &d.pfo_bcal_e      , "pfo_bcal_e[npfos]"     );
-  _evtdata->Branch( "emaxphoton_px_bcalcoord"  , &d.emaxphoton_px_bcalcoord  , "emaxphoton_px_bcalcoord[npfos]"  );
-  _evtdata->Branch( "emaxphoton_e"             , &d.emaxphoton_e             , "emaxphoton_e[npfos]"             );
-  _evtdata->Branch( "ptmaxphoton_px_bcalcoord" , &d.ptmaxphoton_px_bcalcoord , "ptmaxphoton_px_bcalcoord[npfos]" );
-  _evtdata->Branch( "ptmaxphoton_e"            , &d.ptmaxphoton_e            , "ptmaxphoton_e[npfos]"            );
+  _evtdata->Branch( "emaxphoton_pt_bcalcoord"  , &d.emaxphoton_pt_bcalcoord  , "emaxphoton_pt_bcalcoord"  );
+  _evtdata->Branch( "emaxphoton_e"             , &d.emaxphoton_e             , "emaxphoton_e"             );
+  _evtdata->Branch( "ptmaxphoton_pt_bcalcoord" , &d.ptmaxphoton_pt_bcalcoord , "ptmaxphoton_pt_bcalcoord" );
+  _evtdata->Branch( "ptmaxphoton_e"            , &d.ptmaxphoton_e            , "ptmaxphoton_e"            );
+  _evtdata->Branch( "ptmaxphoton_phi_bcalcoord"            , &d.ptmaxphoton_phi_bcalcoord            , "ptmaxphoton_phi_bcalcoord"            );
+  _evtdata->Branch( "ptmaxphoton_theta_bcalcoord"            , &d.ptmaxphoton_theta_bcalcoord            , "ptmaxphoton_theta_bcalcoord"            );
+  _evtdata->Branch( "emaxphoton_phi_bcalcoord"            , &d.emaxphoton_phi_bcalcoord            , "emaxphoton_phi_bcalcoord"            );
+  _evtdata->Branch( "emaxphoton_theta_bcalcoord"            , &d.emaxphoton_theta_bcalcoord            , "emaxphoton_theta_bcalcoord"            );
 
   _evtdata->Branch( "nmcr"            , &d.nmcr            , "nmcr[npfos]/I"         );
   _evtdata->Branch( "mcr_weight"      , &d.mcr_weight      , "mcr_weight[npfos]"     );
