@@ -18,3 +18,4 @@ def makeFilteredList(filteredlist,listdir,pname):
 			makeFilteredList(filteredlist,newpath,pname)
 		if (os.path.isfile(newpath)) :
 			appendFilteredList(filteredlist,newpath,pname)
+	filteredlist.sort(reverse=True) # descent order

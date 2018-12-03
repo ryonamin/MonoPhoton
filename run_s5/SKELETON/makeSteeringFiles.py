@@ -3,6 +3,8 @@ import os,string,shutil,sys,re,utils,conf
 
 
 def writeXMLs(pname):
+        # input file list. This can be used for KEKCC hstage utility.
+	inputfilelist = open("staging.lst",'w')
 	# make a list that has only accepted file names.
 	filteredlist = []
 	utils.makeFilteredList(filteredlist,conf.LISTDIR,pname)
@@ -32,6 +34,7 @@ def writeXMLs(pname):
 								fpath+=conf.SPACE+filteredlist.pop()
 							else:
 								fpath+=conf.SPACE+filteredlist.pop()+"\n"
+						inputfilelist.write(re.sub(conf.SPACE,"",fpath)+"\n")
 					foutxml.write(re.sub("__INPUTFILES__",fpath,t))
 				elif re.search("__OUTPUTROOTDIR__/__OUTPUTROOT__",t):		
 					tmp = re.sub("__OUTPUTROOTDIR__",conf.OUTDIR_ROOT,t)

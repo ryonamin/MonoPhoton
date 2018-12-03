@@ -7,6 +7,7 @@
 #include <EVENT/Vertex.h>
 #include "lcio.h"
 #include <string>
+#include <map>
 
 #include "UTIL/LCRelationNavigator.h"
 
@@ -14,7 +15,7 @@ class TFile;
 class TTree;
 class TVector3;
 const int NMAX_PFOS   = 500;
-const int NMAX_MCPS   = 10000;
+const int NMAX_MCPS   = 20000;
 const int NMAX_CLRS   = 500;
 const int NMAX_PARENTS   = 10;
 const int NMAX_DAUGHTERS = 10;
@@ -48,6 +49,7 @@ class MonoPhotonProcessor : public Processor {
   
   
   MonoPhotonProcessor() ;
+  ~MonoPhotonProcessor() { std::cerr << "destructor called." << std::endl;} ;
   
   /** Called at the begin of the job before anything is read.
    * Use to initialize the processor, e.g. book histograms.
@@ -72,6 +74,8 @@ class MonoPhotonProcessor : public Processor {
   
   
  protected:
+  bool isFromBeambackground(MCParticle* p);
+  bool isOriginatedFromISR(MCParticle* p);
 
  /** Prepare NTuple 
   */ 
@@ -93,6 +97,7 @@ class MonoPhotonProcessor : public Processor {
    */
   std::string _colMCP ;
   std::string _colPFO ;
+  std::string _colBCal ;
   std::string _colMCPFORelation ;
   LCRelationNavigator* _navpfo;
 
@@ -109,6 +114,9 @@ class MonoPhotonProcessor : public Processor {
     float  pfo_px[NMAX_PFOS];
     float  pfo_py[NMAX_PFOS];
     float  pfo_pz[NMAX_PFOS];
+    float  pfo_pt[NMAX_PFOS];
+    float  pfo_px_bcalcoord[NMAX_PFOS];
+    float  pfo_pt_bcalcoord[NMAX_PFOS];
     float  pfo_phi[NMAX_PFOS];
     float  pfo_theta[NMAX_PFOS];
     //float  pfo_startx[NMAX_PFOS];
@@ -138,6 +146,15 @@ class MonoPhotonProcessor : public Processor {
     float  pfo_lcal_e[NMAX_PFOS];
     float  pfo_lhcal_e[NMAX_PFOS];
     float  pfo_bcal_e[NMAX_PFOS];
+  
+    float  emaxphoton_pt_bcalcoord;
+    float  emaxphoton_phi;
+    float  emaxphoton_theta;
+    float  emaxphoton_e;
+    float  ptmaxphoton_pt_bcalcoord;
+    float  ptmaxphoton_phi;
+    float  ptmaxphoton_theta;
+    float  ptmaxphoton_e;
 
     // MC Relation 
     int    nmcr[NMAX_PFOS];
@@ -147,6 +164,9 @@ class MonoPhotonProcessor : public Processor {
     float  mcr_px[NMAX_PFOS];
     float  mcr_py[NMAX_PFOS];
     float  mcr_pz[NMAX_PFOS];
+    float  mcr_pt[NMAX_PFOS];
+    float  mcr_px_bcalcoord[NMAX_PFOS];
+    float  mcr_pt_bcalcoord[NMAX_PFOS];
     float  mcr_phi[NMAX_PFOS];
     float  mcr_theta[NMAX_PFOS];
     float  mcr_chrg[NMAX_PFOS];
@@ -164,6 +184,10 @@ class MonoPhotonProcessor : public Processor {
     int    mcr_genstatus[NMAX_PFOS];
     int    mcr_simstatus[NMAX_PFOS];
     bool   mcr_iscreatedinsim[NMAX_PFOS];
+    bool   mcr_isoverlay[NMAX_PFOS];
+    bool   mcr_hasLeftDetector[NMAX_PFOS];
+    bool   mcr_isFromBeambkg[NMAX_PFOS];
+    bool   mcr_isOriginatedFromISR[NMAX_PFOS];
 
     // MC Info
     int    nmcps ;     // # of MC Particles 
@@ -175,6 +199,9 @@ class MonoPhotonProcessor : public Processor {
     float  mcp_px[NMAX_MCPS];
     float  mcp_py[NMAX_MCPS];
     float  mcp_pz[NMAX_MCPS];
+    float  mcp_pt[NMAX_MCPS];
+    float  mcp_px_bcalcoord[NMAX_MCPS];
+    float  mcp_pt_bcalcoord[NMAX_MCPS];
     float  mcp_phi[NMAX_MCPS];
     float  mcp_theta[NMAX_MCPS];
     float  mcp_chrg[NMAX_MCPS];
@@ -192,17 +219,35 @@ class MonoPhotonProcessor : public Processor {
     int    mcp_genstatus[NMAX_MCPS];
     int    mcp_simstatus[NMAX_MCPS];
     bool   mcp_iscreatedinsim[NMAX_MCPS];
+    bool   mcp_isoverlay[NMAX_MCPS];
+    bool   mcp_hasLeftDetector[NMAX_MCPS];
+    bool   mcp_isFromBeambkg[NMAX_MCPS];
+    bool   mcp_isOriginatedFromISR[NMAX_MCPS];
 
     int    nclrhits ;    // # of Cal hit clusters;
     float  clr_x[NMAX_CLRS];
     float  clr_y[NMAX_CLRS];
     float  clr_z[NMAX_CLRS];
+
+    int    nbcalclrs ;    // # of BCal clusters;
+    //int    nbcalhits[NMAX_CLRS];    // # of BCal cluster hits; Practically this is always 1.
+    float  bcal_e[NMAX_CLRS];
+    float  bcal_x[NMAX_CLRS];
+    float  bcal_y[NMAX_CLRS];
+    float  bcal_z[NMAX_CLRS];
+    float  bcal_phi[NMAX_CLRS];
+    float  bcal_theta[NMAX_CLRS];
   };
 
   EVTFILLDATA _data;
 
   // output root file name
   std::string _rootfilename;
+
+  float _boostAngle;
+  double _g; // gamma factor
+  double _bg; // beta * gamma
+
 
 } ;
 

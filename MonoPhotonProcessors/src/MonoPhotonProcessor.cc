@@ -1,5 +1,6 @@
 #include "MonoPhotonProcessor.h"
 #include <iostream>
+#include <map>
 
 #include <EVENT/LCCollection.h>
 #include <EVENT/ReconstructedParticle.h>
@@ -48,6 +49,13 @@ MonoPhotonProcessor::MonoPhotonProcessor() : Processor("MonoPhotonProcessor") {
   	   std::string("PandoraPFOs") 
     ) ;
 
+    registerInputCollection( LCIO::RECONSTRUCTEDPARTICLE,
+  	   "InputBCalRecoCollection" , 
+  	   "Name of the BCalReco collection"  ,
+  	   _colBCal ,
+  	   std::string("BCalRecoParticle") 
+    ) ;
+
     registerInputCollection( LCIO::LCRELATION,
 	   "InputMCTruthLinkCollection" , 
   	   "Name of the MCTruthLink collection"  ,
@@ -59,6 +67,12 @@ MonoPhotonProcessor::MonoPhotonProcessor() : Processor("MonoPhotonProcessor") {
            "Name of Root file (default: output.root)",
            _rootfilename, 
            std::string("output.root")
+    );
+
+    registerProcessorParameter( "BoostAngle",
+           "Angle defined w.r.t z-axis in x direction. 14 mrad crossing angle (ILD) case, this parameter should be -0.007 to be BCal coordinates from ILD coordinates (default: -0.007)",
+           _boostAngle, 
+           float(-0.007)
     );
 
 }
@@ -79,6 +93,8 @@ void MonoPhotonProcessor::init() {
 
     makeNTuple();
 
+    _g = TMath::Sqrt(1. + (TMath::Tan(_boostAngle)*TMath::Tan(_boostAngle)));
+    _bg = TMath::Tan(_boostAngle);
 }
 
 
@@ -90,7 +106,6 @@ void MonoPhotonProcessor::processRunHeader( LCRunHeader* run) {
 
 
 void MonoPhotonProcessor::processEvent( LCEvent * evt ) { 
-
     _nEvt ++ ;
 
     // this gets called for every event 
@@ -108,8 +123,16 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
     LCCollection* colmcp = evt->getCollection( _colMCP ) ;
     //LCCollection* colpfo = 0;
     //colpfo = evt->getCollection( _colPFO ) ;
-    LCCollection* colmcpforel = evt->getCollection( _colMCPFORelation ) ;
-
+    //LCCollection* colmcpforel = evt->getCollection( _colMCPFORelation ) ;
+    LCCollection* colmcpforel = NULL;
+    try{
+      colmcpforel = evt->getCollection( _colMCPFORelation ) ;
+    }
+    catch( lcio::DataNotAvailableException e )
+    {
+        streamlog_out(WARNING) << _colMCPFORelation << " collection not available" << std::endl;
+        colmcpforel = NULL;
+    }
 
     LCCollection* colpfo = NULL;
     try{
@@ -119,6 +142,16 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
     {
         streamlog_out(WARNING) << _colPFO << " collection not available" << std::endl;
         colpfo = NULL;
+    }
+
+    LCCollection* colbcal = NULL;
+    try{
+        colbcal = evt->getCollection( _colBCal );
+    }
+    catch( lcio::DataNotAvailableException e )
+    {
+        streamlog_out(WARNING) << _colBCal << " collection not available" << std::endl;
+        colbcal = NULL;
     }
 
     // this will only be entered if the collection is available
@@ -192,6 +225,10 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             _data.mcp_py[i]    = py;
             _data.mcp_pz[i]    = pz; 
             TVector3 pv(px,py,pz);
+            _data.mcp_pt[i]    = pv.Pt(); 
+            float px_bcalcoord = _bg*pv.Mag() + _g * px; 
+            _data.mcp_px_bcalcoord[i] = px_bcalcoord; 
+            _data.mcp_pt_bcalcoord[i] = TMath::Sqrt(px_bcalcoord*px_bcalcoord+py*py); 
             _data.mcp_phi[i]   = pv.Phi(); 
             //_data.mcp_theta[i] = pv.Theta(); // need to consider 2pi = 0.
             _data.mcp_theta[i] = (pz>0)?TMath::ATan(pv.Perp()/pz):TMath::ATan(pv.Perp()/pz)+TMath::Pi(); 
@@ -206,11 +243,19 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             _data.mcp_genstatus[i] = p->getGeneratorStatus();
             _data.mcp_simstatus[i] = p->getSimulatorStatus();
             _data.mcp_iscreatedinsim[i] = p->isCreatedInSimulation();
+            _data.mcp_isoverlay[i] = p->isOverlay();
+            _data.mcp_hasLeftDetector[i] = p->hasLeftDetector();
 
+            _data.mcp_isFromBeambkg[i] = isFromBeambackground(p);
+            _data.mcp_isOriginatedFromISR[i] = isOriginatedFromISR(p);
         } 
     }
 
 
+    float photon_ptmax  = -99999.;
+    float ptmaxphoton_e = -99999.;
+    float photon_emax   = -99999.;
+    float emaxphoton_pt_bcalcoord = -99999.;
     if( colpfo != NULL ){
 
         int nPFO = colpfo->getNumberOfElements()  ;
@@ -224,6 +269,11 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
 
         int icalhits = 0;
         for(int i=0; i< nPFO ; i++){
+
+            _data.mcr_index[i] = 0;
+            _data.mcr_weight[i] = 0;
+            
+
             ReconstructedParticle* p = dynamic_cast<ReconstructedParticle*>( colpfo->getElementAt( i ) ) ;
 
             // TRK info
@@ -240,8 +290,9 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
               if ( nmcr > 0 ) {
                  //mcr = dynamic_cast< MCParticle *> ( _navpfo->getRelatedToObjects( p )[0] );
                  mcr = getBestMCParticleOf(p,_navpfo);
-                 //std::cerr << "MCRelation event = " << _nEvt << " index = " << _mcpmap.find(mcr)->second << std::endl;
+                 //std::cerr << "MCRelation event = " << _nEvt << " mcr = " << mcr << " index = " << _mcpmap.find(mcr)->second << " ipfo = " << i << "/" << nPFO << "."<< std::endl;
                  _data.mcr_index[i] = _mcpmap.find(mcr)->second;
+                 //std::cerr << _data.mcr_index[i]<< " " << isOriginatedFromIndex8(mcr) << std::endl;
                  if (mcr->getParents().size()) {
                    //std::cerr << "                   parent index = " << _mcpmap.find(mcr->getParents()[0])->second << std::endl;
                    int nParents = mcr->getParents().size(); 
@@ -265,6 +316,10 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
                  _data.mcr_py[i]    = py;
                  _data.mcr_pz[i]    = pz; 
                  TVector3 pv(px,py,pz);
+                 _data.mcr_pt[i]    = pv.Pt(); 
+                 float px_bcalcoord = _bg*pv.Mag() + _g * px; 
+                 _data.mcr_px_bcalcoord[i] = px_bcalcoord; 
+                 _data.mcr_pt_bcalcoord[i] = TMath::Sqrt(px_bcalcoord*px_bcalcoord+py*py); 
                  _data.mcr_phi[i]   = pv.Phi(); 
                  //_data.mcr_theta[i] = pv.Theta(); // need to consider 2pi = 0.
                  //_data.mcr_theta[i] = TMath::ATan(pv.Perp()/pz); 
@@ -274,9 +329,11 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
                  _data.mcr_genstatus[i] = mcr->getGeneratorStatus();
                  _data.mcr_simstatus[i] = mcr->getSimulatorStatus();
                  _data.mcr_iscreatedinsim[i] = mcr->isCreatedInSimulation();
+                 _data.mcr_isoverlay[i] = mcr->isOverlay();
+                 _data.mcr_hasLeftDetector[i] = mcr->hasLeftDetector();
+                 _data.mcr_isFromBeambkg[i] = isFromBeambackground(mcr);
+                 _data.mcr_isOriginatedFromISR[i] = isOriginatedFromISR(mcr);
               }
-              delete _navpfo;
-              _navpfo = 0;
             }
 
             _data.pfo_e[i]     = p->getEnergy(); 
@@ -287,6 +344,10 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             _data.pfo_py[i]    = py;
             _data.pfo_pz[i]    = pz; 
             TVector3 pv(px,py,pz);
+            _data.pfo_pt[i]    = pv.Pt(); 
+            float px_bcalcoord = _bg*pv.Mag() + _g * px; 
+            _data.pfo_px_bcalcoord[i] = px_bcalcoord; 
+            _data.pfo_pt_bcalcoord[i] = TMath::Sqrt(px_bcalcoord*px_bcalcoord+py*py); 
             _data.pfo_phi[i]   = pv.Phi(); 
             //_data.pfo_theta[i] = pv.Theta(); // need to consider 2pi = 0.
             //_data.pfo_theta[i] = TMath::ATan(pv.Perp()/pz); 
@@ -294,6 +355,19 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
             _data.pfo_chrg[i]  = p->getCharge();
             _data.pfo_pdg[i]   = p->getType();
             _data.pfo_goodnessOfPid[i]   = p->getGoodnessOfPID();
+
+            // find a photon info having E-max and Pt-max
+            if (_data.pfo_pdg[i]==22) {
+              if (p->getEnergy()>photon_emax) {
+                 photon_emax = p->getEnergy();
+                 emaxphoton_pt_bcalcoord = TMath::ATan2(_data.pfo_py[i],_data.pfo_pt_bcalcoord[i]);
+                 emaxphoton_phi_bcalord = _data.pfo_px_bcalcoord[i];
+              }
+              if (_data.pfo_pt_bcalcoord[i]>photon_ptmax) {
+                 photon_ptmax = _data.pfo_pt_bcalcoord[i];
+                 ptmaxphoton_e = _data.pfo_e[i];
+              }
+            }           
 
             //_data.pfo_startx[i]   = float(p->getStartVertex()->getPosition()[0]);
             //_data.pfo_starty[i]   = float(p->getStartVertex()->getPosition()[1]);
@@ -357,7 +431,48 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
               _data.pfo_cal_z[i] = zsum / nclrs;
             }
         }
+
+        _data.emaxphoton_pt_bcalcoord  = emaxphoton_pt_bcalcoord;
+        _data.emaxphoton_e             = photon_emax;
+        _data.ptmaxphoton_pt_bcalcoord = photon_ptmax;
+        _data.ptmaxphoton_e            = ptmaxphoton_e;
+
         _data.nclrhits = icalhits;
+        delete _navpfo;
+        _navpfo = 0;
+    }
+
+    if( colbcal != NULL ){
+
+        int nBCal = colbcal->getNumberOfElements()  ;
+        _data.nbcalclrs = nBCal;
+        //std::cerr << "#### nBCal = " << nBCal << std::endl;
+        for (int i = 0; i < nBCal; i++) {
+           ReconstructedParticle* p = dynamic_cast<ReconstructedParticle*>( colbcal->getElementAt( i ) ) ;
+
+           // CAL info
+           const EVENT::ClusterVec& clusvec = p->getClusters();
+#if 0
+           _data.nbcalhits[i] = clusvec.size();
+           for (int icalhits = 0; icalhits < clusvec.size(); icalhits++) {
+             _data.bcal_e[icalhits] = clusvec[icalhits]->getEnergy();
+             TVector3 xp(clusvec[icalhits]->getPosition());
+             _data.bcal_x[icalhits] = xp.X();
+             _data.bcal_y[icalhits] = xp.Y();
+             _data.bcal_z[icalhits] = xp.Z();
+             _data.bcal_phi[icalhits]   = xp.Phi(); 
+             _data.bcal_theta[icalhits] = (xp.Z()>0)?TMath::ATan(xp.Perp()/xp.Z()):TMath::ATan(xp.Perp()/xp.Z())+TMath::Pi(); 
+           }
+#else // it turned out that clusvec.size is always 1 if exists.
+             _data.bcal_e[i] = clusvec[0]->getEnergy();
+             TVector3 xp(clusvec[0]->getPosition());
+             _data.bcal_x[i] = xp.X();
+             _data.bcal_y[i] = xp.Y();
+             _data.bcal_z[i] = xp.Z();
+             _data.bcal_phi[i]   = xp.Phi(); 
+             _data.bcal_theta[i] = (xp.Z()>0)?TMath::ATan(xp.Perp()/xp.Z()):TMath::ATan(xp.Perp()/xp.Z())+TMath::Pi(); 
+#endif
+        }
     }
 
     //-- note: this will not be printed if compiled w/o MARLINDEBUG=1 !
@@ -369,6 +484,7 @@ void MonoPhotonProcessor::processEvent( LCEvent * evt ) {
     _data.evt = _nEvt;
 
     _evtdata->Fill(); 
+//std::cerr << "End Event " << std::endl;
 
 }
 
@@ -408,6 +524,9 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "pfo_px"          , &d.pfo_px          , "pfo_px[npfos]"         );
   _evtdata->Branch( "pfo_py"          , &d.pfo_py          , "pfo_py[npfos]"         );
   _evtdata->Branch( "pfo_pz"          , &d.pfo_pz          , "pfo_pz[npfos]"         );
+  _evtdata->Branch( "pfo_pt"          , &d.pfo_pt          , "pfo_pt[npfos]"         );
+  _evtdata->Branch( "pfo_px_bcalcoord", &d.pfo_px_bcalcoord, "pfo_px_bcalcoord[npfos]");
+  _evtdata->Branch( "pfo_pt_bcalcoord", &d.pfo_pt_bcalcoord, "pfo_pt_bcalcoord[npfos]");
   _evtdata->Branch( "pfo_phi"         , &d.pfo_phi         , "pfo_phi[npfos]"        );
   _evtdata->Branch( "pfo_theta"       , &d.pfo_theta       , "pfo_theta[npfos]"      );
   //_evtdata->Branch( "pfo_startx"      , &d.pfo_startx      , "pfo_startx[npfos]"     );
@@ -436,6 +555,10 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "pfo_lcal_e"      , &d.pfo_lcal_e      , "pfo_lcal_e[npfos]"     );
   _evtdata->Branch( "pfo_lhcal_e"     , &d.pfo_lhcal_e     , "pfo_lhcal_e[npfos]"    );
   _evtdata->Branch( "pfo_bcal_e"      , &d.pfo_bcal_e      , "pfo_bcal_e[npfos]"     );
+  _evtdata->Branch( "emaxphoton_px_bcalcoord"  , &d.emaxphoton_px_bcalcoord  , "emaxphoton_px_bcalcoord[npfos]"  );
+  _evtdata->Branch( "emaxphoton_e"             , &d.emaxphoton_e             , "emaxphoton_e[npfos]"             );
+  _evtdata->Branch( "ptmaxphoton_px_bcalcoord" , &d.ptmaxphoton_px_bcalcoord , "ptmaxphoton_px_bcalcoord[npfos]" );
+  _evtdata->Branch( "ptmaxphoton_e"            , &d.ptmaxphoton_e            , "ptmaxphoton_e[npfos]"            );
 
   _evtdata->Branch( "nmcr"            , &d.nmcr            , "nmcr[npfos]/I"         );
   _evtdata->Branch( "mcr_weight"      , &d.mcr_weight      , "mcr_weight[npfos]"     );
@@ -444,6 +567,9 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "mcr_px"          , &d.mcr_px          , "mcr_px[npfos]"         );
   _evtdata->Branch( "mcr_py"          , &d.mcr_py          , "mcr_py[npfos]"         );
   _evtdata->Branch( "mcr_pz"          , &d.mcr_pz          , "mcr_pz[npfos]"         );
+  _evtdata->Branch( "mcr_pt"          , &d.mcr_pt          , "mcr_pt[npfos]"         );
+  _evtdata->Branch( "mcr_px_bcalcoord", &d.mcr_px_bcalcoord, "mcr_px_bcalcoord[npfos]");
+  _evtdata->Branch( "mcr_pt_bcalcoord", &d.mcr_pt_bcalcoord, "mcr_pt_bcalcoord[npfos]");
   _evtdata->Branch( "mcr_phi"         , &d.mcr_phi         , "mcr_phi[npfos]"        );
   _evtdata->Branch( "mcr_theta"       , &d.mcr_theta       , "mcr_theta[npfos]"      );
   _evtdata->Branch( "mcr_chrg"        , &d.mcr_chrg        , "mcr_chrg[npfos]"       );
@@ -462,6 +588,10 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "mcr_daughterIndex" , &d.mcr_daughterIndex , "mcr_daughterIndex[npfos][10]/I" );
   _evtdata->Branch( "mcr_simstatus"   , &d.mcr_simstatus   , "mcr_simstatus[npfos]/I");
   _evtdata->Branch( "mcr_iscreatedinsim"   , &d.mcr_iscreatedinsim   , "mcr_iscreatedinsim[npfos]/O");
+  _evtdata->Branch( "mcr_isoverlay"   , &d.mcr_isoverlay   , "mcr_isoverlay[npfos]/O");
+  _evtdata->Branch( "mcr_hasLeftDetector"   , &d.mcr_hasLeftDetector   , "mcr_hasLeftDetector[npfos]/O");
+  _evtdata->Branch( "mcr_isFromBeambkg", d.mcr_isFromBeambkg, "mcr_isFromBeambkg[npfos]/O");
+  _evtdata->Branch( "mcr_isOriginatedFromISR", d.mcr_isOriginatedFromISR, "mcr_isOriginatedFromISR[npfos]/O");
 
   _evtdata->Branch( "nmcps"           , &d.nmcps           , "nmcps/I"               );
   _evtdata->Branch( "ipx"             , &d.ipx             , "ipx"                   );
@@ -472,6 +602,9 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "mcp_px"          , &d.mcp_px          , "mcp_px[nmcps]"         );
   _evtdata->Branch( "mcp_py"          , &d.mcp_py          , "mcp_py[nmcps]"         );
   _evtdata->Branch( "mcp_pz"          , &d.mcp_pz          , "mcp_pz[nmcps]"         );
+  _evtdata->Branch( "mcp_pt"          , &d.mcp_pt          , "mcp_pt[nmcps]"         );
+  _evtdata->Branch( "mcp_px_bcalcoord", &d.mcp_px_bcalcoord, "mcp_px_bcalcoord[nmcps]");
+  _evtdata->Branch( "mcp_pt_bcalcoord", &d.mcp_pt_bcalcoord, "mcp_pt_bcalcoord[nmcps]");
   _evtdata->Branch( "mcp_phi"         , &d.mcp_phi         , "mcp_phi[nmcps]"        );
   _evtdata->Branch( "mcp_theta"       , &d.mcp_theta       , "mcp_theta[nmcps]"      );
   _evtdata->Branch( "mcp_chrg"        , &d.mcp_chrg        , "mcp_chrg[nmcps]"       );
@@ -489,10 +622,22 @@ void MonoPhotonProcessor::makeNTuple() {
   _evtdata->Branch( "mcp_genstatus"   , &d.mcp_genstatus   , "mcp_genstatus[nmcps]/I");
   _evtdata->Branch( "mcp_simstatus"   , &d.mcp_simstatus   , "mcp_simstatus[nmcps]/I");
   _evtdata->Branch( "mcp_iscreatedinsim"   , &d.mcp_iscreatedinsim   , "mcp_iscreatedinsim[nmcps]/O");
+  _evtdata->Branch( "mcp_isoverlay"   , &d.mcp_isoverlay   , "mcp_isoverlay[nmcps]/O");
+  _evtdata->Branch( "mcp_hasLeftDetector"   , &d.mcp_hasLeftDetector   , "mcp_hasLeftDetector[nmcps]/O");
+  _evtdata->Branch( "mcp_isFromBeambkg", d.mcp_isFromBeambkg, "mcp_isFromBeambkg[nmcps]/O");
+  _evtdata->Branch( "mcp_isOriginatedFromISR", d.mcp_isOriginatedFromISR, "mcp_isOriginatedFromISR[nmcps]/O");
   _evtdata->Branch( "nclrhits"        , &d.nclrhits        , "nclrhits/I"            );
   _evtdata->Branch( "clr_x"           , &d.clr_x           , "clr_x[nclrhits]"       );
   _evtdata->Branch( "clr_y"           , &d.clr_y           , "clr_y[nclrhits]"       );
   _evtdata->Branch( "clr_z"           , &d.clr_z           , "clr_z[nclrhits]"       );
+  _evtdata->Branch( "nbcalclrs"       , &d.nbcalclrs       , "nbcalclrs/I"            );
+  //_evtdata->Branch( "nbcalhits"       , &d.nbcalhits       , "nbcalhits[nbcalclrs]/I"            );
+  _evtdata->Branch( "bcal_e"           , &d.bcal_e           , "bcal_e[nbcalclrs]"       );
+  _evtdata->Branch( "bcal_x"           , &d.bcal_x           , "bcal_x[nbcalclrs]"       );
+  _evtdata->Branch( "bcal_y"           , &d.bcal_y           , "bcal_y[nbcalclrs]"       );
+  _evtdata->Branch( "bcal_z"           , &d.bcal_z           , "bcal_z[nbcalclrs]"       );
+  _evtdata->Branch( "bcal_phi"         , &d.bcal_phi         , "bcal_phi[nbcalclrs]"     );
+  _evtdata->Branch( "bcal_theta"       , &d.bcal_theta       , "bcal_theta[nbcalclrs]"   );
   return;
 
 }
@@ -516,8 +661,7 @@ std::cerr << "  ### new reco particle. pdg_reco = " << p->getType() << std::endl
 std::cerr << "    MCParticles linked to this object... ( # = " << nrel << " )" << std::endl;
 #endif
 
-    double trkwmax;
-    //double calwmax;
+    double wmax;
     MCParticle *best = 0;
     for (int imc = 0; imc < nrel; imc++ ) {
 
@@ -527,11 +671,18 @@ std::cerr << "    MCParticles linked to this object... ( # = " << nrel << " )" <
       double calw = double((int(nav->getRelatedToWeights(p)[imc])/10000)/1000.);
 
       if (imc==0) {
-        trkwmax = trkw;
+        if (trkw>calw) wmax = trkw;
+        else           wmax = calw;
         best = mcp;
-      } else if (trkw > trkwmax) {
-        trkwmax = trkw;
-        best = mcp;
+      } else {
+        if (trkw > wmax) {
+          wmax = trkw;
+          best = mcp;
+        }
+        if (calw > wmax) {
+          wmax = calw;
+          best = mcp;
+        }
       }
 #ifdef __DEBUG__
       std::cerr << "         " << imc << ") : pdg_mc = " << mcp->getPDG() 
@@ -541,4 +692,45 @@ std::cerr << "    MCParticles linked to this object... ( # = " << nrel << " )" <
 #endif
    }
    return best;
+}
+
+bool MonoPhotonProcessor::isFromBeambackground(MCParticle* p)
+{
+   int nparents = p->getParents().size();
+   for (int iparent = 0; iparent < nparents; iparent++) {
+     MCParticle *parent = p->getParents()[iparent];
+     bool retval = isFromBeambackground(parent);
+     return retval;
+   }
+   std::map<MCParticle*,int>::iterator mcpitr = _mcpmap.find(p);
+   if (mcpitr!=_mcpmap.end()) {
+     if (mcpitr->second==0 || mcpitr->second==1) return false;
+     //std::cerr << p->getPDG() << " index : " << mcpitr->second << std::endl;
+   }
+   return true;
+}
+
+bool MonoPhotonProcessor::isOriginatedFromISR(MCParticle* p)
+{
+   std::map<MCParticle*,int>::iterator mcpitr = _mcpmap.find(p);
+   if (mcpitr!=_mcpmap.end()) {
+     if (mcpitr->second>=8) { 
+       if (mcpitr->second==8) return true;
+       else if (mcpitr->second==9||mcpitr->second==10) {
+          MCParticle* parent = 0;
+          if (p->getParents().size()==2) parent = p->getParents()[0];
+          std::map<MCParticle*,int>::iterator mcpitr2 = _mcpmap.find(parent);
+          if (mcpitr2!=_mcpmap.end()) {
+            if (mcpitr2->second==2) return true;
+          }
+       }
+     }
+   }
+   int nparents = p->getParents().size();
+   for (int iparent = 0; iparent < nparents; iparent++) {
+     MCParticle *parent = p->getParents()[iparent];
+     bool retval = isOriginatedFromISR(parent);
+     return retval;
+   }
+   return false;
 }

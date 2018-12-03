@@ -1,6 +1,9 @@
 #!/usr/bin/python
 import os,utils,conf
 
+import signal
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+
 utils.makeDirectory(conf.LOGDIR)
 xmls = os.listdir(conf.XMLDIR)
 
