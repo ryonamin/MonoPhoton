@@ -33,10 +33,14 @@ class Event
            _T->SetBranchAddress("pfo_cal_z",pfo_cal_z);
            _T->SetBranchAddress("pfo_ecal_e",pfo_ecal_e);
            _T->SetBranchAddress("pfo_hcal_e",pfo_hcal_e);
-           _T->SetBranchAddress("photon_emax",photon_emax);
-           _T->SetBranchAddress("emaxphoton_pt_bcalcoord",emaxphoton_pt_bcalcoord);
-           _T->SetBranchAddress("photon_ptmax",photon_ptmax);
-           _T->SetBranchAddress("ptmaxphoton_e",ptmaxphoton_e);
+           _T->SetBranchAddress("emaxphoton_e",&emaxphoton_e);
+           _T->SetBranchAddress("ptmaxphoton_e",&ptmaxphoton_e);
+           _T->SetBranchAddress("emaxphoton_pt_bcalcoord",&emaxphoton_pt_bcalcoord);
+           _T->SetBranchAddress("ptmaxphoton_pt_bcalcoord",&ptmaxphoton_pt_bcalcoord);
+           _T->SetBranchAddress("emaxphoton_phi_bcalcoord",&emaxphoton_phi_bcalcoord);
+           _T->SetBranchAddress("ptmaxphoton_phi_bcalcoord",&ptmaxphoton_phi_bcalcoord);
+           _T->SetBranchAddress("emaxphoton_theta_bcalcoord",&emaxphoton_theta_bcalcoord);
+           _T->SetBranchAddress("ptmaxphoton_theta_bcalcoord",&ptmaxphoton_theta_bcalcoord);
            // RecoMCTruthLink 
            _T->SetBranchAddress("mcr_pdg",mcr_pdg);
            _T->SetBranchAddress("mcr_weight",mcr_weight);
@@ -65,14 +69,16 @@ class Event
 
           int nAllPhoton_MC_per_evt = 0;
           int nAcceptablePhoton_MC_per_evt = 0;
+          signal_index = -1.;
           signal_e = -1.;
           nISRPhotons = 0;
           for (int i = 0; i < nmcps; i++) {
             if (mcp_pdg[i]==22 && mcp_parentIndex[i][0]==2&&mcp_parentIndex[i][1]==3) { // select only initial ones
               nAllPhoton_MC_per_evt++;
-              if (mcp_ndaughters[i] < 2 && mcp_e[i]>2. && mcp_theta[i]>6/180.*TMath::Pi() && mcp_theta[i]<174/180.*TMath::Pi()) { 
+              if (mcp_ndaughters[i] < 2 && mcp_e[i]>2. && mcp_theta[i]>5/180.*TMath::Pi() && mcp_theta[i]<175/180.*TMath::Pi()) { 
                 // select photon (non converted photon only)
                 nAcceptablePhoton_MC_per_evt++;
+                signal_index = i;
                 signal_e = mcp_e[i];
                 signal_phi = mcp_phi[i];
                 signal_theta = mcp_theta[i];
@@ -82,25 +88,11 @@ class Event
           }
           _isAcceptableEvent = (nAllPhoton_MC_per_evt==1&&nAcceptablePhoton_MC_per_evt==1); 
 
-          for (int i = 0; i < npfos; i++) {
-            if (pfo_pdg[i]==22) {
-              if (pfo_e[i] > 2. && pfo_e < 220.) {
-                 if (pfo_theta[i] > 7./180.*TMath::Pi() && pfo_theta[i] < 173./180.*TMath::Pi()) {
-                   float phi_bcalcoord = TMath::ATan2(rcmoy[indexPT],RCMOX_BCal_photon_PTmax[0]); 
-                 }
-              }
-            }  
-          }
         }
 
         bool isAcceptableEvent(int ev) {
           callGetEntry(ev);
           return _isAcceptableEvent;
-        }
-
-        bool isSignalLikeEvent(int ev) {
-          callGetEntry(ev);
-          return _isSignalLikeEvent;
         }
 
         bool isPassedPtCut(int ev) {
@@ -132,6 +124,16 @@ class Event
           return true;
         }
 
+        int getSignalIndex() const { 
+          if (signal_index>0) return signal_index; 
+          else return -1.;
+        }
+
+        float getSignalE() const { 
+          if (signal_e>0) return signal_e; 
+          else return -1.;
+        }
+
         float getSignalTheta() const { 
           if (signal_e>0) return signal_theta; 
           else return -1.;
@@ -143,6 +145,11 @@ class Event
 
         struct Outputs
         {
+          TH1F* hE_photon;
+          TH1F* hNrecNgen_photon;
+          TH2F* hNrecNgenEmc_photon;
+          TH2F* hNrecNgenCostheta_photon;
+
           TH1F* hPt_ep_isr;
           TH1F* hPt_ep_ol;
           TH1F* hPt_ep_other;
@@ -175,6 +182,7 @@ class Event
         int currentEv = -1;
         static const int NMAX = 10000;
         // MCParticle
+	int signal_index;
         float signal_e, signal_phi, signal_theta;
         bool _isAcceptableEvent;
         bool _isSignalLikeEvent;
@@ -195,6 +203,8 @@ class Event
         int nbcalclrs;
         float bcal_e[NMAX], bcal_phi[NMAX], bcal_theta[NMAX];
         float bcal_x[NMAX], bcal_y[NMAX], bcal_z[NMAX];
-        float photon_emax, photon_ptmax, emaxphton_pt_bcalcoord, ptmaxphoton_e;
+        float emaxphoton_e, ptmaxphoton_pt_bcalcoord, emaxphoton_pt_bcalcoord, ptmaxphoton_e;
+        float ptmaxphoton_phi_bcalcoord, emaxphoton_phi_bcalcoord;
+        float ptmaxphoton_theta_bcalcoord, emaxphoton_theta_bcalcoord;
 };
 
