@@ -75,7 +75,7 @@ class Event
           for (int i = 0; i < nmcps; i++) {
             if (mcp_pdg[i]==22 && mcp_parentIndex[i][0]==2&&mcp_parentIndex[i][1]==3) { // select only initial ones
               nAllPhoton_MC_per_evt++;
-              if (mcp_ndaughters[i] < 2 && mcp_e[i]>2. && mcp_theta[i]>5/180.*TMath::Pi() && mcp_theta[i]<175/180.*TMath::Pi()) { 
+              if (mcp_ndaughters[i] < 2 && mcp_e[i]>2. && mcp_theta[i]>7/180.*TMath::Pi() && mcp_theta[i]<173/180.*TMath::Pi()) { 
                 // select photon (non converted photon only)
                 nAcceptablePhoton_MC_per_evt++;
                 signal_index = i;
@@ -149,6 +149,8 @@ class Event
           TH1F* hNrecNgen_photon;
           TH2F* hNrecNgenEmc_photon;
           TH2F* hNrecNgenCostheta_photon;
+          TGraphErrors* gNrecNgenEmc_photon;
+          TGraphErrors* gNrecNgenCostheta_photon;
 
           TH1F* hPt_ep_isr;
           TH1F* hPt_ep_ol;

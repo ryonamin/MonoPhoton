@@ -38,27 +38,34 @@ void Event::process(string fname)
   double y_min_cos = outputs.hNrecNgenCostheta_photon->GetYaxis()->GetBinLowEdge(1);
   double y_max_cos = outputs.hNrecNgenCostheta_photon->GetYaxis()->GetBinUpEdge(ybins_cos);
   TH2F hNrecNgenEmc_photon("hNrecNgenEmc_photon","",xbins_e,x_min_e,x_max_e,ybins_e,y_min_e,y_max_e);
+  TH2F hNrecNgenCostheta_photon("hNrecNgenCostheta_photon","",xbins_cos,x_min_cos,x_max_cos,ybins_cos,y_min_cos,y_max_cos);
 
   cerr << "# of events = " << nevents << endl;
+  int nsignalevt = 0;
   for (int ev = 0; ev < nevents; ev++) {
     callGetEntry(ev);
 
+    bool isSignalEvt = false;
     for (int i = 0; i < npfos; i++) {
       if (pfo_pdg[i]==22) {
-        if (pfo_theta[i] > 7./180.*TMath::Pi() && pfo_theta[i] < 173./180.*TMath::Pi()) {
+        //if (pfo_theta[i] > 7./180.*TMath::Pi() && pfo_theta[i] < 173./180.*TMath::Pi()) {
+        if (ptmaxphoton_theta_bcalcoord > 7./180.*TMath::Pi() && ptmaxphoton_theta_bcalcoord < 173./180.*TMath::Pi()) {
           if ( (fabs(ptmaxphoton_phi_bcalcoord/TMath::Pi()*180.)>35. && ptmaxphoton_pt_bcalcoord>1.92 ) ||
                (fabs(ptmaxphoton_phi_bcalcoord/TMath::Pi()*180.)<=35. && ptmaxphoton_pt_bcalcoord>5.65)  ) {
-            if (pfo_e[i] > 2.) {
-	      outputs.hE_photon->Fill(pfo_e[i]); // Before max energy cut. Corresponds to Fig 5.8     
+            //if (pfo_e[i] > 2.) {
+            if (ptmaxphoton_e > 2.) {
+	      //outputs.hE_photon->Fill(pfo_e[i]); // Before max energy cut. Corresponds to Fig 5.8     
+	      outputs.hE_photon->Fill(ptmaxphoton_e); // Before max energy cut. Corresponds to Fig 5.8     
+              isSignalEvt = true;
               if (pfo_e[i] < 220.) {
                 //cerr << "This event has signal." << endl;
-
               } // Max energy cut 
             } // Min energy cut
           } // Pt_max cut depending on |phi| in bcal coordinates.
         } // theta restriction
       } // photon case 
     } // PFO loop
+    if (isSignalEvt) nsignalevt++;
 
     // Efficinecy of ISR photon reconstcution
     if (isAcceptableEvent(ev)) {
@@ -66,15 +73,13 @@ void Event::process(string fname)
       for (int i = 0; i < npfos; i++) {
         if (pfo_pdg[i]==22) {
 	   if (mcr_index[i] == getSignalIndex()) {
-               cerr << "Matched." << endl;
 	       nrec++;
            } 
         } 
       } 
-      if (nrec>3) cerr << nrec << " " << getSignalE() << endl;
       outputs.hNrecNgen_photon->Fill(nrec);        // Corresponds to 5.14     
-      hNrecNgenEmc_photon.Fill(getSignalE(),nrec); // Corresponds to 5.15 (b)    
-      //outputs.hNrecNgenCostheta_photon->Fill(TMath::Cos(getSignalTheta()),nrec); // Corresponds to 5.15 (d)    
+      hNrecNgenEmc_photon.Fill(getSignalE(),nrec); // Corresponds to 5.15 (a)    
+      hNrecNgenCostheta_photon.Fill(TMath::Cos(getSignalTheta()),nrec); // Corresponds to 5.15 (c)    
 
     } 
 #if 0
@@ -165,35 +170,35 @@ void Event::process(string fname)
     else if (getNISRPhotons()>1)  outputs.hNBcalClustersMultiISR->Fill(nbcalclrs);
 #endif
   } // event loop
+  cerr << "Fraction of singal events = " << float(nsignalevt)/float(nevents) << endl;
 #if 1
-  double x_e[xbins_e];
-  double xerr_e[xbins_e];
-  double y_e[xbins_e];
-  double yerr_e[xbins_e];
-  bool test = false;
+  double x_e[xbins_e], xerr_e[xbins_e], y_e[xbins_e], yerr_e[xbins_e];
   for (int ix = 1; ix <= xbins_e; ix++) {
     x_e[ix] = hNrecNgenEmc_photon.GetXaxis()->GetBinCenter(ix);
     xerr_e[ix] = hNrecNgenEmc_photon.GetXaxis()->GetBinWidth(ix)/TMath::Sqrt(12);
     TH1F h_y_e("h_y_e","",ybins_e,y_min_e,y_max_e);
     for (int iy = 1; iy <= ybins_e; iy++) {
       h_y_e.Fill(hNrecNgenEmc_photon.GetYaxis()->GetBinCenter(iy), hNrecNgenEmc_photon.GetBinContent(ix,iy)); 
-      if (hNrecNgenEmc_photon.GetYaxis()->GetBinCenter(iy) > 2 && hNrecNgenEmc_photon.GetBinContent(ix,iy) > 0) {
-	 cerr << iy << " " << hNrecNgenEmc_photon.GetYaxis()->GetBinCenter(iy) << " "<< hNrecNgenEmc_photon.GetBinContent(ix,iy) << endl;
-	 cerr << "test : " << h_y_e.GetMean() << endl;
-	 test = true; 
-      }
-      //break;
     }
-    //if (test) {
-    //        h_y_e.DrawCopy();
-    //        break;
-    //}
     y_e[ix] = h_y_e.GetMean();
-    yerr_e[ix] = h_y_e.GetRMS();
-    cerr << x_e[ix] << " " << y_e[ix] << endl;
+    yerr_e[ix] = h_y_e.GetRMS() / TMath::Sqrt(h_y_e.GetEntries());
   }
-  TGraphErrors* ge = new TGraphErrors(xbins_e,x_e,y_e,xerr_e,yerr_e);
-  ge->Draw("ap");
+  outputs.gNrecNgenEmc_photon = new TGraphErrors(xbins_e,x_e,y_e,xerr_e,yerr_e);
+  outputs.gNrecNgenEmc_photon->SetTitle(";E_{#gamma,MC} [GeV/c];#bar{N_{rec}/N_{gen}}");
+
+  double x_cos[xbins_cos], xerr_cos[xbins_cos], y_cos[xbins_cos], yerr_cos[xbins_cos];
+  for (int ix = 1; ix <= xbins_cos; ix++) {
+    x_cos[ix] = hNrecNgenCostheta_photon.GetXaxis()->GetBinCenter(ix);
+    xerr_cos[ix] = hNrecNgenCostheta_photon.GetXaxis()->GetBinWidth(ix)/TMath::Sqrt(12);
+    TH1F h_y_cos("h_y_cos","",ybins_cos,y_min_cos,y_max_cos);
+    for (int iy = 1; iy <= ybins_cos; iy++) {
+      h_y_cos.Fill(hNrecNgenCostheta_photon.GetYaxis()->GetBinCenter(iy), hNrecNgenCostheta_photon.GetBinContent(ix,iy)); 
+    }
+    y_cos[ix] = h_y_cos.GetMean();
+    yerr_cos[ix] = h_y_cos.GetRMS() / TMath::Sqrt(h_y_cos.GetEntries());
+  }
+  outputs.gNrecNgenCostheta_photon = new TGraphErrors(xbins_cos,x_cos,y_cos,xerr_cos,yerr_cos);
+  outputs.gNrecNgenCostheta_photon->SetTitle(";cos#theta_{#gamma,MC};#bar{N_{rec}/N_{gen}}");
 #endif
 }
 
@@ -257,7 +262,9 @@ void mcp_pfo_test()
   for (int i = 1; i < 2; i++) {
     stringstream fname;
     //fname << "/hsm/ilc/users/yonamine/physics/monophoton/run_DBD/nung/root/dbd_500GeV.nung_" << i << ".root" << ends;
-    fname << "/Users/ryonamin/tmp/Monophoton_test/MonoPhoton/run_DBD/nung/root/dbd_500GeV.nung_" << i << ".root" << ends;
+    //fname << "/Users/ryonamin/tmp/Monophoton_test/MonoPhoton/run_DBD/nung/root/dbd_500GeV.nung_" << i << ".root" << ends;
+    fname << "root/dbd_500GeV.nung.eR.pL_" << i << ".root" << ends;
+    //fname << "root/dbd_500GeV.nung.eL.pR_" << i << ".root" << ends;
     nung.process(fname.str().data());
   }
   //nung.process("nunug/root/l5_500GeV.nung_1.root");
@@ -362,5 +369,13 @@ void mcp_pfo_test()
   hNBcalClusters_all->Add(bhabhang.outputs.hNBcalClusters);
   hNBcalClusters_all->Draw(); 
 #endif
+  TCanvas* c1 = new TCanvas("c1","",600,400);
+  nung.outputs.gNrecNgenEmc_photon->GetXaxis()->SetRangeUser(0.,250.);
+  nung.outputs.gNrecNgenEmc_photon->GetYaxis()->SetRangeUser(0.99,1.03);
+  nung.outputs.gNrecNgenEmc_photon->Draw("ap");
+  TCanvas* c2 = new TCanvas("c2","",600,400);
+  nung.outputs.gNrecNgenCostheta_photon->Draw("ap");
+  nung.outputs.gNrecNgenCostheta_photon->GetXaxis()->SetRangeUser(0.,1.);
+  nung.outputs.gNrecNgenCostheta_photon->GetYaxis()->SetRangeUser(0.99,1.15);
 }
 
